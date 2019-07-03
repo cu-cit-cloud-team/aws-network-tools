@@ -4,11 +4,12 @@ Analyze network connectivity between a source in AWS to some destination
 
 ## Arguments
 
-| argument (short) | argument (long) | description | example |
-| -v | --verbose | print extra info | |
-| -s | --source-ec2-ip | private IPv4 address of an EC2 instance | 10.92.76.45 |
-| -r | --source-rds | name of RDS instance | employee-db-prod |
-| -d | --dest-ip | (required) private or public IP address of destination | 172.217.12.164 |
+argument (short) | argument (long) | description | example
+---- | ---- | ---- | ----
+`-v` | `--verbose` | print extra info | n/a
+`-s` | `--source-ec2-ip` | private IPv4 address of an EC2 instance | 10.92.76.45
+`-r` | `--source-rds` | name of RDS instance | employee-db-prod
+`-d` | `--dest-ip`| (required) private or public IP address of destination | 172.217.12.164
 
 One of `source-ec2-ip` and `source-rds` must be provided. This tool assumes that the source AWS resource (RDS instance or private IP address) resides in the region and the AWS account for which AWS credentials are configured.
 

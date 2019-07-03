@@ -355,6 +355,116 @@ def get_rds_instance(client, source_rds_name, verbose=False):
         return None
     return response['DBInstances'][0]
 
+def get_dc_virtual_interface(virtual_gateway_id, verbose=False):
+    """
+    Find the virtual interface that belongs to the given gateway.
+
+    Parameters:
+        virtual_gateway_id (string): ID of the target virtual gateway
+        verbose (boolean): print extra info; default is False
+
+    Returns:
+        list of dictionary of virtual interface properties
+
+    Example virtual interface properties:
+    [
+        {
+            'ownerAccount': 'string',
+            'virtualInterfaceId': 'string',
+            'location': 'string',
+            'connectionId': 'string',
+            'virtualInterfaceType': 'string',
+            'virtualInterfaceName': 'string',
+            'vlan': 123,
+            'asn': 123,
+            'amazonSideAsn': 123,
+            'authKey': 'string',
+            'amazonAddress': 'string',
+            'customerAddress': 'string',
+            'addressFamily': 'ipv4'|'ipv6',
+            'virtualInterfaceState': 'confirming'|'verifying'|'pending'|'available'|'down'|'deleting'|'deleted'|'rejected'|'unknown',
+            'customerRouterConfig': 'string',
+            'mtu': 123,
+            'jumboFrameCapable': True|False,
+            'virtualGatewayId': 'string',
+            'directConnectGatewayId': 'string',
+            'routeFilterPrefixes': [
+                {
+                    'cidr': 'string'
+                },
+            ],
+            'bgpPeers': [
+                {
+                    'bgpPeerId': 'string',
+                    'asn': 123,
+                    'authKey': 'string',
+                    'addressFamily': 'ipv4'|'ipv6',
+                    'amazonAddress': 'string',
+                    'customerAddress': 'string',
+                    'bgpPeerState': 'verifying'|'pending'|'available'|'deleting'|'deleted',
+                    'bgpStatus': 'up'|'down'|'unknown',
+                    'awsDeviceV2': 'string'
+                },
+            ],
+            'region': 'string',
+            'awsDeviceV2': 'string',
+            'tags': [
+                {
+                    'key': 'string',
+                    'value': 'string'
+                },
+            ]
+        },
+    ]
+    """
+    dc_client = boto3.client('directconnect')
+    response = dc_client.describe_virtual_interfaces()
+    results = []
+    for i in response['virtualInterfaces']:
+        if i['virtualGatewayId'] == virtual_gateway_id:
+            results.append(i)
+    return results
+
+def report_dc_virtual_interfaces(dc_vifs, verbose=False):
+    """
+    Analyze and report on Direct Connect Virtual Interfaces
+
+    Parameters:
+        dc_vifs (list of Direct Connect Virtual Interfaces dictionaries): list virtual intrface properties from get_dc_virtual_interface()
+        verbose (boolean): print extra info; default is False
+
+    Returns:
+        boolean: whether or not a network problem exists in from the perspective of the NACL
+    """
+    print("Checking Direct Connect Virtual Interfaces:")
+    if verbose:
+        pprint(dc_vifs)
+    if not dc_vifs:
+        print("NETWORK CONNECTIVITY ERROR. No DC Virtual Interfaces present.")
+        return True
+    network_problem_exists = False
+    for i in dc_vifs:
+        this_interface_problem = False
+        if i['virtualInterfaceState'] != 'available':
+            print("NETWORK CONNECTIVITY ERROR. DC Virtual Interface is not in 'available' state:")
+            pprint(i)
+            network_problem_exists = True
+            this_interface_problem = True
+
+        for bgp_peer in i['bgpPeers']:
+            if bgp_peer['bgpStatus'] != 'up' or bgp_peer['bgpPeerState'] != 'available':
+                print("NETWORK CONNECTIVITY ERROR. DC Virtual Interface BGP Peer issue:")
+                pprint(bgp_peer)
+                network_problem_exists = True
+                this_interface_problem = True
+            else:
+                print("DC Virtual Interface BGP peer " + bgp_peer['bgpPeerId'] + " appears OK.")
+
+        if not this_interface_problem:
+            print("DC Virtual Interface " + i['virtualInterfaceName'] + " (" + i['virtualInterfaceId'] + ") appears OK.")
+
+    return network_problem_exists
+
 def report_nacl(source_nacl, source_ip_address, dest_ip_address, verbose=False):
     """
     Analyze and report on the NACL
@@ -417,7 +527,9 @@ def report_route_table(ec2_client, source_route_table, source_vpc_id, source_ip_
             if source_gateway['Attachments'][0]['State'] != "available":
                 print("NETWORK CONNECTIVITY ERROR. Internet Gateway is NOT attached.")
                 network_problem_exists = True
-        if r['GatewayId'].startswith('vgw-'):
+            else:
+                print("Internet Gateway appears OK.")
+        elif r['GatewayId'].startswith('vgw-'):
             print("Virtual Private Gateway:")
             response = ec2_client.describe_vpn_gateways(
                 VpnGatewayIds=[r['GatewayId']]
@@ -430,9 +542,13 @@ def report_route_table(ec2_client, source_route_table, source_vpc_id, source_ip_
                 print("NETWORK CONNECTIVITY ERROR. Virtual Gateway is NOT available.")
                 network_problem_exists = True
             if source_gateway['VpcAttachments'][0]['State'] != "attached":
-                print("NETWORK CONNECTIVITY ERROR. Internet Gateway is NOT attached.")
+                print("NETWORK CONNECTIVITY ERROR. Virtual Gateway is NOT attached.")
                 network_problem_exists = True
 
+            # Check for Direct Connect
+            dc_vifs = get_dc_virtual_interface(r['GatewayId'], verbose=verbose)
+            problem = report_dc_virtual_interfaces(dc_vifs, verbose=verbose)
+            network_problem_exists = network_problem_exists or problem
         else:
             print("WARNING. Some other type of gateway is NOT being analyzed.")
 

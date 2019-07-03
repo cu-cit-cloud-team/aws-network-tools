@@ -44,7 +44,7 @@ This tool does not handle ALL networking situations. It is meant to gather basic
 
 ## Future Enhancements
 
-- Gather/analyze information about Direct Connect
+- [x] Gather/analyze information about Direct Connect and Internet Gateways
 - Specify source/destination port as an input parameter and scope analsys to that port
 - Handle ELB/ALB/NLB as a "source"
 - Update this README with a list of specific checks that are made (and that can fail)

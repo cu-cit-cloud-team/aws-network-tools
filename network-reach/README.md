@@ -46,3 +46,4 @@ This tool does not handle ALL networking situations. It is meant to gather basic
 
 - Gather/analyze information about Direct Connect
 - Specify source/destination port as an input parameter and scope analsys to that port
+- Handle ELB/ALB/NLB as a "source"

@@ -403,8 +403,38 @@ def report_route_table(ec2_client, source_route_table, source_vpc_id, source_ip_
         network_problem_exists = True
 
     elif 'GatewayId' in r:
-        # uses a VGW
-        print("Via virtual gateway: " + r['GatewayId'])
+        # uses a Gateway
+        print("Via gateway: " + r['GatewayId'])
+        if  r['GatewayId'].startswith('igw-'):
+            print("Internet Gateway:")
+            response = ec2_client.describe_internet_gateways(
+                InternetGatewayIds=[r['GatewayId']]
+            )
+            assert len(response['InternetGateways']) == 1
+            source_gateway = response['InternetGateways'][0]
+            pprint(source_gateway)
+            assert len(source_gateway['Attachments']) == 1
+            if source_gateway['Attachments'][0]['State'] != "available":
+                print("NETWORK CONNECTIVITY ERROR. Internet Gateway is NOT attached.")
+                network_problem_exists = True
+        if r['GatewayId'].startswith('vgw-'):
+            print("Virtual Private Gateway:")
+            response = ec2_client.describe_vpn_gateways(
+                VpnGatewayIds=[r['GatewayId']]
+            )
+            assert len(response['VpnGateways']) == 1
+            source_gateway = response['VpnGateways'][0]
+            pprint(source_gateway)
+            assert len(source_gateway['VpcAttachments']) == 1
+            if source_gateway['State'] != 'available':
+                print("NETWORK CONNECTIVITY ERROR. Virtual Gateway is NOT available.")
+                network_problem_exists = True
+            if source_gateway['VpcAttachments'][0]['State'] != "attached":
+                print("NETWORK CONNECTIVITY ERROR. Internet Gateway is NOT attached.")
+                network_problem_exists = True
+
+        else:
+            print("WARNING. Some other type of gateway is NOT being analyzed.")
 
     elif 'NatGatewayId' in r:
         # NAT
@@ -581,7 +611,7 @@ def main(argv):
     result = get_route_tables_for_subnets(ec2_client, [source_subnet_id], verbose=verbose)
     assert len(result) == 1
     source_route_table = result[0]
-    problem = report_route_table(ec2_client, source_vpc_id, source_route_table, source_ip_address, dest_ip_address, verbose=verbose)
+    problem = report_route_table(ec2_client, source_route_table, source_vpc_id, source_ip_address, dest_ip_address, verbose=verbose)
     network_problem_exists = network_problem_exists or problem
 
     # NACL

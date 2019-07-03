@@ -41,3 +41,8 @@ This tool does not handle ALL networking situations. It is meant to gather basic
 - [boto3](https://github.com/boto/boto3)
 - [AWS credentials](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html)
   - IAM privileges must grant `ec2:Describe*` and `rds:Describe*` at minimum.
+
+## Future Enhancements
+
+- Gather/analyze information about Direct Connect
+- Specify source/destination port as an input parameter and scope analsys to that port

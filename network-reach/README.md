@@ -46,6 +46,8 @@ This tool does not handle ALL networking situations. It is meant to gather basic
 - [boto3](https://github.com/boto/boto3)
 - [AWS credentials](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html)
   - IAM privileges must grant `ec2:Describe*`, `rds:Describe*`, `dms:Describe*` at minimum.
+- [AWS SDK environment variables](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html)
+  - Depending on your AWS credentials and CLI configuration, you may need to set `AWS_DEFAULT_PROFILE`, `AWS_DEFAULT_REGION`, or others
 
 ## Future Enhancements
 

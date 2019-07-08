@@ -38,19 +38,24 @@ def get_value_for_tag_key(tags, key):
             return item.get('Value', '')
     return ''
 
-def find_subnet_for_ip(client, subnet_id_list, ip_address_str, verbose=False):
+def get_subnets(client, subnet_id_list, verbose=False):
     response = client.describe_subnets(
         SubnetIds=subnet_id_list
     )
     if verbose:
         print("Subnets:")
         pprint(response['Subnets'])
+    assert len(subnet_id_list) == len(response['Subnets'])
+    return response['Subnets']
+
+def find_subnet_for_ip(client, subnet_id_list, ip_address_str, verbose=False):
+    subnets = get_subnets(client, subnet_id_list, verbose=verbose)
     ip_address = ipaddress.ip_address(ip_address_str)
-    for s in response['Subnets']:
+    for s in subnets:
         cidr = ipaddress.ip_network(s['CidrBlock'])
         if ip_address in cidr:
-            return s, response['Subnets']
-    return None, response['Subnets']
+            return s, subnets
+    return None, subnets
 
 def find_route_matches(routes, dest_ip_str):
     dest_ip = ipaddress.ip_address(dest_ip_str)
@@ -110,18 +115,48 @@ def get_nacls_for_subnets(client, list_subnet_ids, verbose=False):
         pprint(response['NetworkAcls'])
     return response['NetworkAcls']
 
-def get_route_tables_for_subnets(client, list_subnet_ids, verbose=False):
+def get_main_route_table_for_vpc(client, vpc_id):
+    response = client.describe_route_tables(
+        Filters=[
+            {
+                'Name': 'vpc-id',
+                'Values': [vpc_id]
+            },
+            {
+                'Name': 'association.main',
+                'Values': ['true']
+            },
+        ]
+    )
+    assert len(response['RouteTables']) == 1
+    return response['RouteTables'][0]
+
+def get_route_tables_for_subnets(client, vpc_id, list_subnet_ids, verbose=False):
+    rtables = {}
+    for subnet_id in list_subnet_ids:
+        result = get_route_table_for_subnet(client, vpc_id, subnet_id, verbose=verbose)
+        rtables[result['RouteTableId']] = result
+    return rtables.values()
+
+def get_route_table_for_subnet(client, vpc_id, subnet_id, verbose=False):
     response = client.describe_route_tables(
         Filters=[
             {
                 'Name': 'association.subnet-id',
-                'Values': list_subnet_ids
-            },
+                'Values': [subnet_id]
+            }
         ]
     )
+    assert len(response['RouteTables']) <= 1
+    result = None
+    if len(response['RouteTables']) == 1:
+        result = response['RouteTables'][0]
+    else:
+        result = get_main_route_table_for_vpc(client, vpc_id)
     if verbose:
-        pprint(response['RouteTables'])
-    return response['RouteTables']
+        print("Route Table for Subnet " + subnet_id + ":")
+        pprint(result)
+    return result
 
 def get_nat_gateway(client, nat_gateway_id):
     response = client.describe_nat_gateways(
@@ -601,19 +636,19 @@ def report_security_groups(ec2_client, source_security_group_ids, source_ip_addr
     if len(ingress_sg_matches) == 0:
         network_problem_exists = True
         print("NETWORK CONNECTIVITY ERROR. No ingress is allowed by source Security Groups for " + dest_ip_address)
-        print("\tPerhaps access to this AWS resource indirect, through a loadbalancer? ")
+        print("\tPerhaps access to this AWS resource is indirect, through a loadbalancer? ")
 
     print("Potential Egress Matches:")
     pprint(egress_sg_matches)
     if len(egress_sg_matches) == 0:
         network_problem_exists = True
         print("NETWORK CONNECTIVITY ERROR. No egress is allowed by source Security Groups for " + dest_ip_address)
-        print("\tPerhaps access to this AWS resource indirect, through a loadbalancer? ")
+        print("\tPerhaps access to this AWS resource is indirect, through a loadbalancer? ")
     return network_problem_exists
 
-def report_db_subnet_groups(ec2_client, subnet_id_list, verbose=False):
+def report_db_subnet_groups(ec2_client, vpc_id, subnet_id_list, verbose=False):
     # validate that DBSubnet Group subnets use the same RouteTable
-    result = get_route_tables_for_subnets(ec2_client, subnet_id_list, verbose=verbose)
+    result = get_route_tables_for_subnets(ec2_client, vpc_id, subnet_id_list)
     assert len(result) > 0
     if len(result) > 1:
         print("WARNING. Subnets in DBSubnetGroup do not use the same route table!")
@@ -624,6 +659,85 @@ def report_db_subnet_groups(ec2_client, subnet_id_list, verbose=False):
         print("WARNING. Subnets in DBSubnetGroup do not use the same NACL!")
     return False
 
+def process_subnet_list(subnets):
+    subnet_id_list = []
+    for s in subnets:
+        if s['SubnetStatus'] == 'Active':
+            subnet_id_list.append(s['SubnetIdentifier'])
+        else:
+            print("WARNING. Subnet " + s['SubnetIdentifier'] + " in DBSubnetGroup is not 'Active'")
+    return subnet_id_list
+
+def get_dms_instance(client, source_dms_name, verbose=False):
+    """
+    Retrive info about an DMS instance
+
+    Parameters:
+        client: boto3 RDS client
+        source_dms_name (string): name of the DMS instance
+        verbose (boolean): print extra info; default is False
+
+    Returns:
+        dictionary: DMS instance properties; example below
+
+        {'AllocatedStorage': 100,
+         'AutoMinorVersionUpgrade': True,
+         'AvailabilityZone': 'us-east-1e',
+         'EngineVersion': '3.1.2',
+         'FreeUntil': datetime.datetime(2019, 5, 11, 10, 41, tzinfo=tzlocal()),
+         'InstanceCreateTime': datetime.datetime(2018, 11, 9, 9, 41, 0, 569000, tzinfo=tzlocal()),
+         'KmsKeyId': 'arn:aws:kms:us-east-1:123456789012:key/412b5a06-8325-4211-a11a-44d14fd03ccc',
+         'MultiAZ': False,
+         'PendingModifiedValues': {},
+         'PreferredMaintenanceWindow': 'sun:16:51-sun:17:21',
+         'PubliclyAccessible': True,
+         'ReplicationInstanceArn': 'arn:aws:dms:us-east-1:123456789012:rep:7VVK2I7P2FKXEUA2WY4UXO62NQ',
+         'ReplicationInstanceClass': 'dms.t2.medium',
+         'ReplicationInstanceIdentifier': 'replication-instance-1',
+         'ReplicationInstancePrivateIpAddress': '10.92.82.173',
+         'ReplicationInstancePrivateIpAddresses': ['10.92.82.173'],
+         'ReplicationInstancePublicIpAddress': '184.72.183.5',
+         'ReplicationInstancePublicIpAddresses': ['184.72.183.5'],
+         'ReplicationInstanceStatus': 'available',
+         'ReplicationSubnetGroup': {'ReplicationSubnetGroupDescription': 'default '
+                                                                         'group '
+                                                                         'created by '
+                                                                         'console for '
+                                                                         'vpc id '
+                                                                         'vpc-20ded745',
+                                    'ReplicationSubnetGroupIdentifier': 'default-vpc-20ded745',
+                                    'SubnetGroupStatus': 'Complete',
+                                    'Subnets': [{'SubnetAvailabilityZone': {'Name': 'us-east-1e'},
+                                                 'SubnetIdentifier': 'subnet-0755423d',
+                                                 'SubnetStatus': 'Active'},
+                                                {'SubnetAvailabilityZone': {'Name': 'us-east-1d'},
+                                                 'SubnetIdentifier': 'subnet-1d10366a',
+                                                 'SubnetStatus': 'Active'},
+                                                {'SubnetAvailabilityZone': {'Name': 'us-east-1e'},
+                                                 'SubnetIdentifier': 'subnet-20c3cc1a',
+                                                 'SubnetStatus': 'Active'},
+                                                {'SubnetAvailabilityZone': {'Name': 'us-east-1e'},
+                                                 'SubnetIdentifier': 'subnet-26c3cc1c',
+                                                 'SubnetStatus': 'Active'}],
+                                    'VpcId': 'vpc-20ded745'},
+         'VpcSecurityGroups': [{'Status': 'active',
+                                'VpcSecurityGroupId': 'sg-a754a1c0'}]}
+    """
+    response = client.describe_replication_instances(
+        Filters=[
+            {
+                'Name': 'replication-instance-id',
+                'Values': [source_dms_name]
+            }
+        ]
+    )
+    if verbose:
+        pprint(response['ReplicationInstances'])
+    assert len(response['ReplicationInstances']) <= 1
+    if  len(response['ReplicationInstances']) == 0:
+        return None
+    return response['ReplicationInstances'][0]
+
 def main(argv):
 
     parser = parser = argparse.ArgumentParser(description='show network connectivity between two IPs')
@@ -631,12 +745,14 @@ def main(argv):
     parser.add_argument('-s', '--source-ec2-ip', required=False, default='', help="private IP address of source in AWS")
     parser.add_argument('-d', '--dest-ip', required=True, help="destination IP address")
     parser.add_argument('-r', '--source-rds', required=False, default='', help="name of RDS instance for source")
+    parser.add_argument('-m', '--source-dms', required=False, default='', help="name of DMS instance for source")
     args = parser.parse_args()
 
     verbose = args.verbose
     source_ec2_ip_address = args.source_ec2_ip
     dest_ip_address = args.dest_ip
     source_rds_name = args.source_rds
+    source_dms_name = args.source_dms
     source_security_group_ids = []
 
     print("============================================================")
@@ -645,10 +761,12 @@ def main(argv):
     print("source_ec2_ip_address: " + source_ec2_ip_address)
     print("dest_ip_address: " + dest_ip_address)
     print("source_rds_name: " + source_rds_name)
+    print("source_dms_name: " + source_dms_name)
 
     network_problem_exists = False
     ec2_client = boto3.client('ec2')
     rds_client = boto3.client('rds')
+    dms_client = boto3.client('dms')
 
     print("============================================================")
     print("Source info:")
@@ -659,6 +777,7 @@ def main(argv):
             print("ERROR. Source EC2 instance with private IP address " + source_ec2_ip_address + " cannot be found.")
         else:
             # EC2
+            pprint(source_instance)
             source_vpc_id = source_instance['VpcId']
             source_subnet_id = source_instance['SubnetId']
             source_name = source_instance['Name']
@@ -680,24 +799,20 @@ def main(argv):
             print("ERROR. Source RDS instance with name " + source_rds_name + " cannot be found.")
         else:
             # RDS
+            pprint(source_rds_instance)
             source_name = source_rds_instance['DBInstanceIdentifier']
             source_vpc_id = source_rds_instance['DBSubnetGroup']['VpcId']
             source_dns_name = source_rds_instance['Endpoint']['Address']
             source_ip_address = socket.gethostbyname(source_dns_name)
 
-            subnet_id_list = []
-            for s in source_rds_instance['DBSubnetGroup']['Subnets']:
-                if s['SubnetStatus'] == 'Active':
-                    subnet_id_list.append(s['SubnetIdentifier'])
-                else:
-                    print("WARNING. Subnet " + s['SubnetIdentifier'] + " in DBSubnetGroup is not 'Active'")
+            subnet_id_list = process_subnet_list(source_rds_instance['DBSubnetGroup']['Subnets'])
 
             source_subnet, all_subnets = find_subnet_for_ip(ec2_client, subnet_id_list, source_ip_address, verbose=verbose)
             assert source_subnet is not None
             source_subnet_id = source_subnet['SubnetId']
 
             # validate that DBSubnet Group subnets use the same RouteTable
-            problem = report_db_subnet_groups(ec2_client, subnet_id_list, verbose=verbose)
+            problem = report_db_subnet_groups(ec2_client, source_vpc_id, subnet_id_list, verbose=verbose)
             network_problem_exists = network_problem_exists or problem
 
             source_security_groups = source_rds_instance['VpcSecurityGroups']
@@ -710,7 +825,32 @@ def main(argv):
             if source_rds_instance['PubliclyAccessible'] and dest_ip_address.starts_with("10."):
                 print("WARNING. Destination IP is private, but RDS instance is Public! Results of this analsysi may be incorrect!")
 
-    # EC2 + RDS common values
+    if source_dms_name != '':
+        source_dms_instance = get_dms_instance(dms_client, source_dms_name, verbose=verbose)
+        if source_dms_instance is None:
+            print("ERROR. Source DMS instance with name " + source_dms_name + " cannot be found.")
+        else:
+            # DMS
+            pprint(source_dms_instance)
+            source_name = source_dms_instance['ReplicationInstanceIdentifier']
+            source_vpc_id = source_dms_instance['ReplicationSubnetGroup']['VpcId']
+            source_ip_address = source_dms_instance['ReplicationInstancePrivateIpAddress']
+            source_dns_name = "n/a"
+
+            subnet_id_list = process_subnet_list(source_dms_instance['ReplicationSubnetGroup']['Subnets'])
+            source_subnet, all_subnets = find_subnet_for_ip(ec2_client, subnet_id_list, source_ip_address, verbose=verbose)
+            assert source_subnet is not None
+            source_subnet_id = source_subnet['SubnetId']
+
+            # validate that Subnet Group subnets use the same RouteTable
+            problem = report_db_subnet_groups(ec2_client, source_vpc_id, subnet_id_list, verbose=verbose)
+            network_problem_exists = network_problem_exists or problem
+
+            source_security_groups = source_dms_instance['VpcSecurityGroups']
+            for sg in source_security_groups:
+                source_security_group_ids.append(sg['VpcSecurityGroupId'])
+
+    # EC2 + RDS + DMS common values
     print("Source IP Address: " + source_ip_address)
     print("Name: " + source_name)
     print("DNS Name:" + source_dns_name)
@@ -724,9 +864,7 @@ def main(argv):
     network_problem_exists = network_problem_exists or problem
 
     # ROUTE TABLE
-    result = get_route_tables_for_subnets(ec2_client, [source_subnet_id], verbose=verbose)
-    assert len(result) == 1
-    source_route_table = result[0]
+    source_route_table = get_route_table_for_subnet(ec2_client, source_vpc_id, source_subnet_id, verbose=verbose)
     problem = report_route_table(ec2_client, source_route_table, source_vpc_id, source_ip_address, dest_ip_address, verbose=verbose)
     network_problem_exists = network_problem_exists or problem
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Pull flow log data from CloudWatch Logs using Logs Insight
+Query CloudWatch Logs using Logs Insight
 """
 import sys
 from pprint import pprint

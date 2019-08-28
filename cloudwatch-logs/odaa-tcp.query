@@ -1,0 +1,9 @@
+# show non-TCP traffic
+filter protocol=6 |
+# traffic w/ destination inside the VPC
+filter (dstAddr LIKE "10.92.164." OR dstAddr LIKE "10.92.165." OR dstAddr LIKE "10.92.166." OR dstAddr LIKE "10.92.167.")
+# traffic w/ source not in 10-space or Cornell public CIDR blocks
+AND (srcAddr NOT LIKE "10." AND srcAddr NOT LIKE "128.84." AND srcAddr NOT LIKE "128.253." AND srcAddr NOT LIKE "132.236."
+AND srcAddr NOT LIKE "192.35.82." AND srcAddr NOT LIKE "192.122.235.")
+| stats sum(bytes) as sumBytes by srcAddr, dstAddr, srcPort, dstPort, protocol
+| sort sumBytes desc

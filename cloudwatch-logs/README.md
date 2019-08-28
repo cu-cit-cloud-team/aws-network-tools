@@ -2,7 +2,9 @@
 
 Tools for CloudWatch Logs
 
-## `insights-query.py`
+## `insights.py`
+
+Query CloudWatch Logs using Logs Insight
 
 ### Arguments
 
@@ -20,7 +22,7 @@ argument (short) | argument (long) | description | example
 ### Examples
 
 ```
-$ ./insights-query.py --log-group vpc-5ffce339 --query flowlog.query
+$ ./insights.py --log-group vpc-5ffce339 --query flowlog.query
 ============================================================
 Configuration:
 verbose: False

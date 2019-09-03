@@ -85,7 +85,7 @@ def main(argv):
         startTime=int(start_time.timestamp()),
         endTime=int(end_time.timestamp()),
         queryString=query,
-        # limit=20
+        limit=10000
     )
     if verbose:
         pprint(response)
@@ -117,8 +117,6 @@ def main(argv):
     response['statistics']['recordsMatched']
     print(f"Records Matched: {int(response['statistics']['recordsMatched'])} Records Scanned: {int(response['statistics']['recordsScanned'])} Bytes Scanned: {int(response['statistics']['bytesScanned'])}")
     result = convert_results(response['results'])
-    if verbose:
-        pprint(result)
     print(f"Records Retrieved: {len(result)}")
     if len(result) > 0:
         with open(output_file, mode='w') as csv_file:

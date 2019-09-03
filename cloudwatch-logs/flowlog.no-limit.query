@@ -1,0 +1,4 @@
+# Generic flow log query
+# Top 10 byte transfers by source and destination IP addresses
+stats sum(bytes) as bytesTransferred by srcAddr, dstAddr
+| sort bytesTransferred desc

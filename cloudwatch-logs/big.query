@@ -1,0 +1,5 @@
+# A query almost guaranteed to generate a lot of result records.
+# Include the "| limit 10000" to get the maximum allowed records.
+# Leaving off the limit makes the query use a default limit of 1,000 records.
+stats avg(bytes), min(bytes), max(bytes) by srcAddr, dstAddr
+| limit 10000

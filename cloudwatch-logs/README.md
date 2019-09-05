@@ -56,9 +56,9 @@ srcAddr,dstAddr,bytesTransferred
 $
 ```
 
-### Limits
+### Gotchas
 
-At present AWS API/SDK appears to limit the total number of records returned to 1,000, regardless of how many records result from the query.
+If you do not include a ` | limit N` at the end of your query, AWS will limit you to retrieving 1,000 records. If you add a ` | limit 10000` at the end of your query, AWS will allow you to retrieve up to 10,000 records. There doesn't seem to be any way to retrieve more than 10,000 result records.
 
 ### Future Enhancements
 

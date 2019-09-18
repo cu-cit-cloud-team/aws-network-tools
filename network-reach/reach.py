@@ -57,13 +57,23 @@ def find_subnet_for_ip(client, subnet_id_list, ip_address_str, verbose=False):
             return s, subnets
     return None, subnets
 
-def find_route_matches(routes, dest_ip_str):
+def find_route_matches(routes, dest_ip_str, verbose=False):
     dest_ip = ipaddress.ip_address(dest_ip_str)
+    match = {}
     for r in routes:
+        if verbose:
+            print(f"Considering route: {r}")
+        if 'DestinationCidrBlock' not in r:
+            continue
         route_cidr = ipaddress.ip_network(r['DestinationCidrBlock'])
         if dest_ip in route_cidr:
-            return r
-    return None
+            if route_cidr.prefixlen > match.get('prefixlen', -1):
+                match = { 'route': r, 'route_cidr': route_cidr, 'prefixlen': route_cidr.prefixlen }
+            if verbose:
+                print("Route matched. ")
+                print("Current best match:")
+                pprint(match)
+    return match.get('route', None)
 
 def find_nacl_rule_matches(nacl_entries, dest_ip_str):
     inbound_rules = []
@@ -538,7 +548,7 @@ def report_route_table(ec2_client, source_route_table, source_vpc_id, source_ip_
     if verbose:
         pprint(source_route_table)
     print("Finding route to " + dest_ip_address)
-    r = find_route_matches(source_route_table['Routes'], dest_ip_address)
+    r = find_route_matches(source_route_table['Routes'], dest_ip_address, verbose)
     if r is not None:
         print("Matching route:")
         pprint(r)

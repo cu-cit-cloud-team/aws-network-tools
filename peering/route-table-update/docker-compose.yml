@@ -1,0 +1,25 @@
+version: "3"
+services:
+  peering:
+    build: .
+    # restart: always
+    container_name: peering
+    environment:
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials.awslogin
+      - AWS_CONFIG_FILE=/root/.aws/config.awslogin
+      # - AWS_ACCESS_KEY_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      # - AWS_SECRET_ACCESS_KEY=yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+      - AWS_PROFILE=CHANGE_ME
+    networks:
+      - default
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./:/mounted-files
+      - ${HOME}/.aws:/root/.aws
+      - ${HOME}/.aws-login:/root/.aws-login
+    working_dir: "/mounted-files"
+networks:
+  default:
+    driver: "bridge"

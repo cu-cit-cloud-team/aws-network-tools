@@ -127,3 +127,12 @@ dmypy.json
 .pyre/
 
 *.csv
+
+# Terraform
+# Compiled files
+**/*.tfstate.*.backup
+**/*.tfstate.backup
+**/terraform.tfstate
+
+# Module directory
+**/.terraform/
